@@ -22,4 +22,20 @@ export class BookingsController {
       next(error);
     }
   }
+
+  public static async getBookings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const role = req.user!.role;
+
+      const bookings = await BookingsService.getBookings(userId, role);
+
+      res.status(200).json({
+        status: 'success',
+        data: bookings,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

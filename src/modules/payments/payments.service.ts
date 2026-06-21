@@ -50,20 +50,18 @@ export class PaymentsService {
         });
       }
 
-      // 3. Start Database Transaction Session
-      const session = await mongoose.startSession();
-      session.startTransaction();
+      // 3. Start Database Session bypassed for local environment compatibility (transactions require Replica Sets)
+      // const session = await mongoose.startSession();
+      // session.startTransaction();
 
       try {
-        const booking = await Booking.findById(bookingId).session(session);
+        const booking = await Booking.findById(bookingId);
         if (!booking) {
           throw new NotFoundError(`Booking record ${bookingId} not found`);
         }
 
         if (booking.status === 'PAID') {
           logger.info(`Booking ${bookingId} is already marked as PAID.`);
-          await session.commitTransaction();
-          session.endSession();
           return;
         }
 
@@ -71,7 +69,7 @@ export class PaymentsService {
           throw new ConflictError('Cannot pay for an expired hold reservation.');
         }
 
-        const pkg = await Package.findById(booking.packageId).session(session);
+        const pkg = await Package.findById(booking.packageId);
         if (!pkg) {
           throw new NotFoundError(`Package associated with booking not found`);
         }
@@ -89,7 +87,7 @@ export class PaymentsService {
             throw new ConflictError('Database inventory check failed: Package sold out');
           }
           pkg.availableInventory -= 1;
-          await pkg.save({ session });
+          await pkg.save();
           logger.info(`📉 Decremented DB package availableInventory for Flash Sale Package: ${pkg._id}`);
         } else {
           // Standard package was already decremented in DB on hold creation
@@ -103,19 +101,14 @@ export class PaymentsService {
         // CRITICAL: Unset/set null holdExpiresAt so the Mongoose TTL index skips deleting this completed booking document
         booking.holdExpiresAt = null;
         
-        await booking.save({ session });
+        await booking.save();
 
         // Update Webhook log to COMPLETED
         await PaymentWebhook.findOneAndUpdate(
           { stripeEventId: eventId },
-          { status: 'COMPLETED', processedAt: new Date() },
-          { session }
+          { status: 'COMPLETED', processedAt: new Date() }
         );
 
-        // Commit all changes atomically
-        await session.commitTransaction();
-        session.endSession();
-        
         logger.info(`💰 Booking ${bookingId} successfully confirmed and paid.`);
 
         // 4. Post-Transaction cleanup of Redis hold locks
@@ -123,10 +116,6 @@ export class PaymentsService {
         await redisClient.del(holdKey);
 
       } catch (transactionError) {
-        // Rollback transaction changes on exception
-        await session.abortTransaction();
-        session.endSession();
-        
         // Update Webhook status to FAILED in a separate query to allow retry
         await PaymentWebhook.findOneAndUpdate({ stripeEventId: eventId }, { status: 'FAILED' });
         throw transactionError;

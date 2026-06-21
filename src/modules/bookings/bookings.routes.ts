@@ -13,4 +13,10 @@ router.post(
   BookingsController.createBooking
 );
 
+router.get(
+  '/',
+  authenticateJWT,
+  BookingsController.getBookings
+);
+
 export default router;

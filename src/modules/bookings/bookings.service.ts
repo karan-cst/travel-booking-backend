@@ -121,4 +121,19 @@ export class BookingsService {
       }
     }
   }
+
+  /**
+   * Retrieves bookings from MongoDB.
+   * If role is admin, returns all bookings in the system.
+   * If role is user, returns only the bookings for that user.
+   */
+  public static async getBookings(userId: string, role: string): Promise<IBooking[]> {
+    if (role === 'admin') {
+      logger.info('🔑 Admin fetching all bookings in system');
+      return await Booking.find().sort({ createdAt: -1 });
+    } else {
+      logger.info(`🔑 User ${userId} fetching their bookings`);
+      return await Booking.find({ userId }).sort({ createdAt: -1 });
+    }
+  }
 }
